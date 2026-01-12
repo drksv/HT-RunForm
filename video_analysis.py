@@ -3,10 +3,11 @@ import numpy as np
 import tempfile
 import os
 import logging
+import mediapipe as mp
 
 from mediapipe.tasks.python import vision
 from mediapipe.tasks.python import BaseOptions
-from mediapipe.tasks.python.vision import Image, ImageFormat
+
 
 # --------------------------------------------------
 # Logging
@@ -67,11 +68,11 @@ def analyze_running_video(video_bytes: bytes):
             if not ret:
                 break
 
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-            mp_image = Image(
-                image_format=ImageFormat.SRGB,
-                data=rgb_frame
+
+            mp_image = mp.Image(
+                image_format=mp.ImageFormat.SRGB,
+                data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             )
 
             result = pose_landmarker.detect(mp_image)
@@ -106,6 +107,7 @@ def analyze_running_video(video_bytes: bytes):
                 os.remove(video_path)
         except Exception as e:
             logger.warning(f"Failed to delete temp video file: {e}")
+
 
 
 
