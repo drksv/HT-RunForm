@@ -1,118 +1,111 @@
 import cv2
 import numpy as np
-import mediapipe as mp
+import os
+import urllib.request
 import logging
 
 from mediapipe.tasks.python import vision
 from mediapipe.tasks.python import BaseOptions
-from mediapipe.tasks.python.vision import PoseLandmarker, PoseLandmarkerOptions
 
-# -------------------------
-# Logging
-# -------------------------
-logger = logging.getLogger("posture")
-logger.setLevel(logging.INFO)
+# --------------------------------------------------
+# Logging setup
+# --------------------------------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] [%(levelname)s] %(message)s",
+)
+logger = logging.getLogger(__name__)
 
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    formatter = logging.Formatter(
-        "[%(asctime)s] [%(levelname)s] %(message)s"
-    )
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-
-logger.info(f"MediaPipe version: {mp.__version__}")
-
-# -------------------------
-# Load Pose model
-# -------------------------
+# --------------------------------------------------
+# Model setup
+# --------------------------------------------------
 MODEL_PATH = "pose_landmarker_lite.task"
+MODEL_URL = (
+    "https://storage.googleapis.com/mediapipe-models/"
+    "pose_landmarker/pose_landmarker_lite/float16/latest/"
+    "pose_landmarker_lite.task"
+)
 
-logger.info("Loading MediaPipe PoseLandmarker model")
+if not os.path.exists(MODEL_PATH):
+    logger.info("Pose model not found. Downloading...")
+    urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
+    logger.info("Pose model downloaded successfully")
 
-options = PoseLandmarkerOptions(
+# --------------------------------------------------
+# Initialize MediaPipe Pose Landmarker
+# --------------------------------------------------
+options = vision.PoseLandmarkerOptions(
     base_options=BaseOptions(model_asset_path=MODEL_PATH),
     running_mode=vision.RunningMode.IMAGE,
     num_poses=1,
+    min_pose_detection_confidence=0.5,
+    min_pose_presence_confidence=0.5,
+    min_tracking_confidence=0.5,
 )
 
-pose_landmarker = PoseLandmarker.create_from_options(options)
+pose_landmarker = vision.PoseLandmarker.create_from_options(options)
+logger.info("MediaPipe Pose Landmarker initialized")
 
-# -------------------------
+# --------------------------------------------------
 # Main analysis function
-# -------------------------
+# --------------------------------------------------
 def analyze_posture_image(image_bytes: bytes):
-    logger.info("Starting posture analysis")
+    """
+    Analyze a running posture image and return textual feedback.
+    """
 
     try:
+        # Decode image
         np_img = np.frombuffer(image_bytes, np.uint8)
         img = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
 
         if img is None:
-            logger.warning("Invalid image uploaded")
+            logger.warning("Invalid image received")
             return ["Invalid image uploaded"]
 
-        height, width, _ = img.shape
-        logger.info(f"Image loaded: {width}x{height}")
-
-        mp_image = mp.Image(
-            image_format=mp.ImageFormat.SRGB,
-            data=cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        # Convert to MediaPipe image
+        mp_image = vision.MPImage(
+            image_format=vision.ImageFormat.SRGB,
+            data=cv2.cvtColor(img, cv2.COLOR_BGR2RGB),
         )
 
+        # Run pose detection
         result = pose_landmarker.detect(mp_image)
 
         if not result.pose_landmarks:
-            logger.info("No pose detected")
-            return [
-                "No runner detected. Upload a full-body side-view running image."
-            ]
+            logger.info("No pose detected in image")
+            return ["No runner detected. Please upload a full-body running image."]
 
         landmarks = result.pose_landmarks[0]
         feedback = []
 
-        # Helper to get landmark by index
-        def lm(idx):
-            return landmarks[idx]
+        # --------------------------------------------------
+        # Posture checks
+        # --------------------------------------------------
+        shoulder = landmarks[11]  # LEFT_SHOULDER
+        hip = landmarks[23]       # LEFT_HIP
 
-        # Indices (MediaPipe spec)
-        LEFT_SHOULDER = 11
-        LEFT_HIP = 23
-        LEFT_KNEE = 25
-        LEFT_ANKLE = 27
-        LEFT_HEEL = 29
-
-        shoulder = lm(LEFT_SHOULDER)
-        hip = lm(LEFT_HIP)
-        knee = lm(LEFT_KNEE)
-        ankle = lm(LEFT_ANKLE)
-        heel = lm(LEFT_HEEL)
-
-        # -------------------------
-        # Torso posture
-        # -------------------------
         if shoulder.y > hip.y:
             feedback.append(
-                "You are leaning forward excessively. Try maintaining an upright torso while running."
+                "You appear to be leaning forward excessively. Try maintaining a tall, upright running posture."
             )
-            logger.info("Forward lean detected")
         else:
             feedback.append("Good upright torso posture detected.")
 
-        # -------------------------
         # Knee lift
-        # -------------------------
+        knee = landmarks[25]  # LEFT_KNEE
         if knee.y < hip.y:
-            feedback.append("Good knee lift detected.")
+            feedback.append("Good knee lift detected, indicating efficient stride mechanics.")
         else:
-            feedback.append("Low knee lift detected. Drive knees slightly higher.")
+            feedback.append("Low knee lift detected. Focus on driving knees slightly higher.")
 
-        # -------------------------
-        # Foot strike
-        # -------------------------
+        # Foot strike estimation
+        ankle = landmarks[27]  # LEFT_ANKLE
+        heel = landmarks[29]   # LEFT_HEEL
+
         if heel.y < ankle.y:
             feedback.append(
-                "Heel strike pattern detected. Consider a mid-foot landing for efficiency."
+                "Possible heel strike detected. Consider a mid-foot landing for better efficiency."
             )
 
         logger.info("Posture analysis completed successfully")
@@ -120,4 +113,4 @@ def analyze_posture_image(image_bytes: bytes):
 
     except Exception as e:
         logger.exception("Posture analysis failed")
-        return ["Internal error during posture analysis"]
+        return [f"Posture analysis failed: {str(e)}"]
