@@ -3,21 +3,20 @@ import tempfile
 import os
 import logging
 import mediapipe as mp
+from posture_tasks import pose_landmarker, vision  # Reuse the model
 
-# --------------------------------------------------
+# -----------------------
 # Logging
-# --------------------------------------------------
+# -----------------------
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s] [%(levelname)s] %(message)s",
 )
 logger = logging.getLogger(__name__)
 
-mp_pose = mp.solutions.pose
-
-# --------------------------------------------------
-# Video analysis
-# --------------------------------------------------
+# -----------------------
+# Video analysis function
+# -----------------------
 def analyze_running_video(video_bytes: bytes):
     feedback = set()
 
@@ -26,40 +25,37 @@ def analyze_running_video(video_bytes: bytes):
         video_path = f.name
 
     cap = cv2.VideoCapture(video_path)
-
     if not cap.isOpened():
         return ["Invalid video uploaded"]
 
     try:
-        with mp_pose.Pose(
-            static_image_mode=False,
-            model_complexity=1,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
-        ) as pose:
+        frame_count = 0
+        MAX_FRAMES = 60
 
-            frame_count = 0
-            while cap.isOpened() and frame_count < 60:
-                ret, frame = cap.read()
-                if not ret:
-                    break
+        while cap.isOpened() and frame_count < MAX_FRAMES:
+            ret, frame = cap.read()
+            if not ret:
+                break
 
-                results = pose.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            mp_image = vision.MPImage(
+                image_format=vision.ImageFormat.SRGB,
+                data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            )
 
-                if results.pose_landmarks:
-                    lm = results.pose_landmarks.landmark
-                    heel = lm[mp_pose.PoseLandmark.LEFT_HEEL]
-                    toe = lm[mp_pose.PoseLandmark.LEFT_FOOT_INDEX]
+            result = pose_landmarker.detect(mp_image)
+            if result.pose_landmarks:
+                lm = result.pose_landmarks[0]
+                heel = lm[29]  # LEFT_HEEL
+                toe = lm[31]   # LEFT_FOOT_INDEX
 
-                    if heel.y < toe.y:
-                        feedback.add("Possible heel striking detected.")
+                if heel.y < toe.y:
+                    feedback.add("Possible heel striking detected.")
 
-                frame_count += 1
+            frame_count += 1
 
         if not feedback:
             feedback.add("Running form appears consistent.")
 
-        logger.info("Running video analysis completed")
         return list(feedback)
 
     except Exception as e:
