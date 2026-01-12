@@ -1,37 +1,66 @@
 import cv2
+import numpy as np
 import tempfile
 import os
 import logging
-import mediapipe as mp
-from posture_tasks import pose_landmarker, vision  # Reuse the model
 
-# -----------------------
+from mediapipe.tasks.python import vision
+from mediapipe.tasks.python import BaseOptions
+
+# --------------------------------------------------
 # Logging
-# -----------------------
+# --------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s] [%(levelname)s] %(message)s",
 )
 logger = logging.getLogger(__name__)
 
-# -----------------------
-# Video analysis function
-# -----------------------
+# --------------------------------------------------
+# Model setup (reuse same model)
+# --------------------------------------------------
+MODEL_PATH = "pose_landmarker_lite.task"
+
+if not os.path.exists(MODEL_PATH):
+    raise RuntimeError("Pose model not found. Ensure posture.py downloads it first.")
+
+options = vision.PoseLandmarkerOptions(
+    base_options=BaseOptions(model_asset_path=MODEL_PATH),
+    running_mode=vision.RunningMode.IMAGE,
+    num_poses=1,
+    min_pose_detection_confidence=0.5,
+    min_pose_presence_confidence=0.5,
+    min_tracking_confidence=0.5,
+)
+
+pose_landmarker = vision.PoseLandmarker.create_from_options(options)
+logger.info("MediaPipe Pose Landmarker (video) initialized")
+
+# --------------------------------------------------
+# Video analysis
+# --------------------------------------------------
 def analyze_running_video(video_bytes: bytes):
+    """
+    Analyze a running video and return posture / gait feedback.
+    """
+
     feedback = set()
 
+    # Save uploaded video temporarily
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as f:
         f.write(video_bytes)
         video_path = f.name
 
     cap = cv2.VideoCapture(video_path)
+
     if not cap.isOpened():
+        logger.error("Unable to open uploaded video")
         return ["Invalid video uploaded"]
 
-    try:
-        frame_count = 0
-        MAX_FRAMES = 60
+    frame_count = 0
+    MAX_FRAMES = 60
 
+    try:
         while cap.isOpened() and frame_count < MAX_FRAMES:
             ret, frame = cap.read()
             if not ret:
@@ -39,23 +68,28 @@ def analyze_running_video(video_bytes: bytes):
 
             mp_image = vision.MPImage(
                 image_format=vision.ImageFormat.SRGB,
-                data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB),
             )
 
             result = pose_landmarker.detect(mp_image)
+
             if result.pose_landmarks:
-                lm = result.pose_landmarks[0]
-                heel = lm[29]  # LEFT_HEEL
-                toe = lm[31]   # LEFT_FOOT_INDEX
+                landmarks = result.pose_landmarks[0]
+
+                heel = landmarks[29]  # LEFT_HEEL
+                toe = landmarks[31]   # LEFT_FOOT_INDEX
 
                 if heel.y < toe.y:
-                    feedback.add("Possible heel striking detected.")
+                    feedback.add(
+                        "Possible heel striking detected. Consider transitioning toward a mid-foot strike."
+                    )
 
             frame_count += 1
 
         if not feedback:
-            feedback.add("Running form appears consistent.")
+            feedback.add("Running form appears generally consistent in sampled frames.")
 
+        logger.info("Running video analysis completed")
         return list(feedback)
 
     except Exception as e:
@@ -64,4 +98,4 @@ def analyze_running_video(video_bytes: bytes):
 
     finally:
         cap.release()
-        os.remove(video_path)
+        os.remove(video_path) and import cv2
