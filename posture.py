@@ -1,10 +1,14 @@
 import cv2
-import mediapipe as mp
 import numpy as np
+import mediapipe as mp
 import logging
 
+from mediapipe.tasks.python import vision
+from mediapipe.tasks.python import BaseOptions
+from mediapipe.tasks.python.vision import PoseLandmarker, PoseLandmarkerOptions
+
 # -------------------------
-# Logging configuration
+# Logging
 # -------------------------
 logger = logging.getLogger("posture")
 logger.setLevel(logging.INFO)
@@ -17,18 +21,22 @@ if not logger.handlers:
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-# -------------------------
-# MediaPipe validation
-# -------------------------
-logger.info(f"MediaPipe loaded from: {mp.__file__}")
-logger.info(f"MediaPipe version: {getattr(mp, '__version__', 'UNKNOWN')}")
+logger.info(f"MediaPipe version: {mp.__version__}")
 
-if not hasattr(mp, "solutions"):
-    logger.error("MediaPipe 'solutions' not found — import shadowing likely.")
-    raise RuntimeError("Invalid MediaPipe installation or name collision")
+# -------------------------
+# Load Pose model
+# -------------------------
+MODEL_PATH = "pose_landmarker_lite.task"
 
-mp_pose = mp.solutions.pose
-logger.info("MediaPipe Pose initialized successfully")
+logger.info("Loading MediaPipe PoseLandmarker model")
+
+options = PoseLandmarkerOptions(
+    base_options=BaseOptions(model_asset_path=MODEL_PATH),
+    running_mode=vision.RunningMode.IMAGE,
+    num_poses=1,
+)
+
+pose_landmarker = PoseLandmarker.create_from_options(options)
 
 # -------------------------
 # Main analysis function
@@ -37,81 +45,79 @@ def analyze_posture_image(image_bytes: bytes):
     logger.info("Starting posture analysis")
 
     try:
-        # Convert bytes → NumPy → OpenCV image
         np_img = np.frombuffer(image_bytes, np.uint8)
         img = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
 
         if img is None:
-            logger.warning("Uploaded image could not be decoded")
-            return ["Invalid image uploaded. Please upload a clear JPG or PNG file."]
+            logger.warning("Invalid image uploaded")
+            return ["Invalid image uploaded"]
 
-        logger.info(f"Image decoded successfully | shape={img.shape}")
+        height, width, _ = img.shape
+        logger.info(f"Image loaded: {width}x{height}")
 
-        # Run MediaPipe Pose
-        with mp_pose.Pose(
-            static_image_mode=True,
-            model_complexity=2,
-            enable_segmentation=False,
-            min_detection_confidence=0.5
-        ) as pose:
+        mp_image = mp.Image(
+            image_format=mp.ImageFormat.SRGB,
+            data=cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        )
 
-            results = pose.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        result = pose_landmarker.detect(mp_image)
 
-            if not results.pose_landmarks:
-                logger.info("No pose landmarks detected")
-                return [
-                    "No runner detected. Please upload a full-body running image taken from the side."
-                ]
+        if not result.pose_landmarks:
+            logger.info("No pose detected")
+            return [
+                "No runner detected. Upload a full-body side-view running image."
+            ]
 
-            landmarks = results.pose_landmarks.landmark
-            feedback = []
+        landmarks = result.pose_landmarks[0]
+        feedback = []
 
-            # -------------------------
-            # Torso posture
-            # -------------------------
-            shoulder = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER]
-            hip = landmarks[mp_pose.PoseLandmark.LEFT_HIP]
+        # Helper to get landmark by index
+        def lm(idx):
+            return landmarks[idx]
 
-            if shoulder.y > hip.y:
-                feedback.append(
-                    "You appear to be leaning forward excessively. Try maintaining a tall, upright running posture."
-                )
-                logger.info("Detected excessive forward lean")
-            else:
-                feedback.append("Good upright torso posture detected.")
-                logger.info("Torso posture looks good")
+        # Indices (MediaPipe spec)
+        LEFT_SHOULDER = 11
+        LEFT_HIP = 23
+        LEFT_KNEE = 25
+        LEFT_ANKLE = 27
+        LEFT_HEEL = 29
 
-            # -------------------------
-            # Knee lift
-            # -------------------------
-            knee = landmarks[mp_pose.PoseLandmark.LEFT_KNEE]
+        shoulder = lm(LEFT_SHOULDER)
+        hip = lm(LEFT_HIP)
+        knee = lm(LEFT_KNEE)
+        ankle = lm(LEFT_ANKLE)
+        heel = lm(LEFT_HEEL)
 
-            if knee.y < hip.y:
-                feedback.append(
-                    "Good knee lift detected, indicating efficient stride mechanics."
-                )
-                logger.info("Good knee lift detected")
-            else:
-                feedback.append(
-                    "Low knee lift detected. Focus on driving knees slightly higher."
-                )
-                logger.info("Low knee lift detected")
+        # -------------------------
+        # Torso posture
+        # -------------------------
+        if shoulder.y > hip.y:
+            feedback.append(
+                "You are leaning forward excessively. Try maintaining an upright torso while running."
+            )
+            logger.info("Forward lean detected")
+        else:
+            feedback.append("Good upright torso posture detected.")
 
-            # -------------------------
-            # Foot strike estimation
-            # -------------------------
-            ankle = landmarks[mp_pose.PoseLandmark.LEFT_ANKLE]
-            heel = landmarks[mp_pose.PoseLandmark.LEFT_HEEL]
+        # -------------------------
+        # Knee lift
+        # -------------------------
+        if knee.y < hip.y:
+            feedback.append("Good knee lift detected.")
+        else:
+            feedback.append("Low knee lift detected. Drive knees slightly higher.")
 
-            if heel.y < ankle.y:
-                feedback.append(
-                    "Possible heel strike detected. Consider a mid-foot landing for better efficiency."
-                )
-                logger.info("Heel strike pattern detected")
+        # -------------------------
+        # Foot strike
+        # -------------------------
+        if heel.y < ankle.y:
+            feedback.append(
+                "Heel strike pattern detected. Consider a mid-foot landing for efficiency."
+            )
 
-            logger.info("Posture analysis completed successfully")
-            return feedback
+        logger.info("Posture analysis completed successfully")
+        return feedback
 
     except Exception as e:
-        logger.exception("Posture analysis failed due to an exception")
-        return ["Internal error during posture analysis. Please try another image."]
+        logger.exception("Posture analysis failed")
+        return ["Internal error during posture analysis"]
