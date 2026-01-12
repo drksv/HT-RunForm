@@ -6,7 +6,7 @@ import logging
 
 from mediapipe.tasks.python import vision
 from mediapipe.tasks.python import BaseOptions
-from mediapipe.tasks.python.vision.core import Image, ImageFormat
+from mediapipe.tasks.python.vision import Image, ImageFormat
 
 # --------------------------------------------------
 # Logging
@@ -106,6 +106,7 @@ def analyze_running_video(video_bytes: bytes):
                 os.remove(video_path)
         except Exception as e:
             logger.warning(f"Failed to delete temp video file: {e}")
+
 
 
 
