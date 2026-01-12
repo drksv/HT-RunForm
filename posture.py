@@ -1,3 +1,4 @@
+import cv2
 import numpy as np
 import os
 import urllib.request
@@ -113,3 +114,4 @@ def analyze_posture_image(image_bytes: bytes):
     except Exception as e:
         logger.exception("Posture analysis failed")
         return [f"Posture analysis failed: {str(e)}"]
+
