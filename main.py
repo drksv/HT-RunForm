@@ -3,6 +3,7 @@ from warmup import get_warmup_cooldown
 from posture import analyze_posture_image
 from video_analysis import analyze_running_video
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, UploadFile, File, Form
 
 
 app = FastAPI()
@@ -20,8 +21,18 @@ async def analyze_running(
     age: int = Form(...),
     gender: str = Form(...),
     experience: str = Form(...),
-    file: UploadFile = Form(...)
+    file: UploadFile = File(...)
 ):
+    image_bytes = await file.read()
+
+    posture_feedback = analyze_posture_image(image_bytes)
+
+    return {
+        "age": age,
+        "gender": gender,
+        "experience": experience,
+        "posture_feedback": posture_feedback
+    }
     warmup = get_warmup_cooldown(age, gender, experience)
 
     data = await file.read()
@@ -37,4 +48,5 @@ async def analyze_running(
         "warmup_cooldown": warmup,
         "posture_feedback": posture_feedback
     }
+
 
