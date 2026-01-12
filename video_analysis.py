@@ -97,5 +97,8 @@ def analyze_running_video(video_bytes: bytes):
         return [f"Video analysis failed: {str(e)}"]
 
     finally:
-        cap.release()
-        os.remove(video_path) and import cv2
+    cap.release()
+    if os.path.exists(video_path):
+        os.remove(video_path)
+
+
