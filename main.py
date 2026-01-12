@@ -26,7 +26,7 @@ async def analyze_running(
 
     data = await file.read()
     if len(data) > 20 * 1024 * 1024:
-    return {"error": "File too large. Max 20MB"}
+        return {"error": "File too large. Max 20MB"}
 
     if file.filename.lower().endswith((".jpg", ".jpeg", ".png")):
         posture_feedback = analyze_posture_image(data)
@@ -37,3 +37,4 @@ async def analyze_running(
         "warmup_cooldown": warmup,
         "posture_feedback": posture_feedback
     }
+
