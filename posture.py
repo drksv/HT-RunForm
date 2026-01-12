@@ -6,7 +6,7 @@ import logging
 
 from mediapipe.tasks.python import vision
 from mediapipe.tasks.python import BaseOptions
-from mediapipe.tasks.python.vision.core import Image, ImageFormat
+from mediapipe.tasks.python.vision import Image, ImageFormat
 
 # --------------------------------------------------
 # Logging setup
@@ -116,5 +116,6 @@ def analyze_posture_image(image_bytes: bytes):
     except Exception as e:
         logger.exception("Posture analysis failed")
         return [f"Posture analysis failed: {str(e)}"]
+
 
 
