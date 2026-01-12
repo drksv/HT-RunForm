@@ -98,7 +98,12 @@ def analyze_running_video(video_bytes: bytes):
 
     finally:
     cap.release()
-    if os.path.exists(video_path):
-        os.remove(video_path)
+    try:
+        if os.path.exists(video_path):
+            os.remove(video_path)
+    except Exception as e:
+        logger.warning(f"Failed to delete temp video file: {e}")
+
+
 
 
