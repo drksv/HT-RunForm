@@ -97,12 +97,13 @@ def analyze_running_video(video_bytes: bytes):
         return [f"Video analysis failed: {str(e)}"]
 
     finally:
-    cap.release()
-    try:
-        if os.path.exists(video_path):
-            os.remove(video_path)
-    except Exception as e:
-        logger.warning(f"Failed to delete temp video file: {e}")
+        cap.release()
+        try:
+            if os.path.exists(video_path):
+                os.remove(video_path)
+        except Exception as e:
+            logger.warning(f"Failed to delete temp video file: {e}")
+
 
 
 
