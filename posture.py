@@ -66,7 +66,7 @@ def analyze_posture_image(image_bytes: bytes):
 
         mp_image = mp.Image(
             image_format=mp.ImageFormat.SRGB,
-            data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            data=cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         )
 
         # Run pose detection
@@ -114,6 +114,7 @@ def analyze_posture_image(image_bytes: bytes):
     except Exception as e:
         logger.exception("Posture analysis failed")
         return [f"Posture analysis failed: {str(e)}"]
+
 
 
 
